@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const accountsList = document.getElementById('accountsList');
   const confirmUnfollowBtn = document.getElementById('confirmUnfollowBtn');
   const scrollToBottomLink = document.getElementById('scrollToBottomLink');
+  const selectAllKeep = document.getElementById('selectAllKeep');
+  const deselectAllKeep = document.getElementById('deselectAllKeep');
   
   let startTime;
   let updateTimer;
@@ -96,6 +98,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }).catch(error => {
       console.error('保存保留列表出错:', error);
     });
+  }
+
+  // 批量更新保留状态
+  async function updateAllKeepStatus(keep) {
+    if (!previewAccounts || previewAccounts.length === 0) return;
+    
+    // 更新内存中的 keepList
+    previewAccounts.forEach(account => {
+      if (keep) {
+        keepList.add(account.username);
+      } else {
+        keepList.delete(account.username);
+      }
+    });
+    
+    // 保存并更新UI
+    await saveKeepList();
+    // 重新显示列表以更新所有复选框和样式
+    await displayAccountsList(previewAccounts);
+    
+    console.log(`已将 ${previewAccounts.length} 个账号全部设置为: ${keep ? '保留' : '取消保留'}`);
   }
 
   function syncProgress() {
@@ -766,6 +789,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+
+  // 全部保留点击事件
+  if (selectAllKeep) {
+    selectAllKeep.addEventListener('click', (e) => {
+      e.preventDefault();
+      updateAllKeepStatus(true);
+    });
+  }
+
+  // 全部取消保留点击事件
+  if (deselectAllKeep) {
+    deselectAllKeep.addEventListener('click', (e) => {
+      e.preventDefault();
+      updateAllKeepStatus(false);
+    });
+  }
 
   // 添加确认取消关注按钮事件
   confirmUnfollowBtn.addEventListener('click', async () => {
