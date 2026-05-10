@@ -13,34 +13,34 @@ if (typeof window.tfMutationObserver === 'undefined') {
   window.tfMutationObserver = null;
 }
 
-// 常量定义不会引起重复声明错误
-const highlightColor = 'rgba(255, 255, 0, 0.3)';
-const accountCellSelector = '[data-testid="cellInnerDiv"], [data-testid="UserCell"]';
-const timelineSelector = '[data-testid="primaryColumn"]'; // 观察这个区域的变化
+// 变量定义使用 var 允许重复声明，防止扩展重新注入时报错
+var highlightColor = 'rgba(255, 255, 0, 0.3)';
+var accountCellSelector = '[data-testid="cellInnerDiv"], [data-testid="UserCell"]';
+var timelineSelector = '[data-testid="primaryColumn"]'; // 观察这个区域的变化
 
 // 在unfollow.js中添加全局错误处理器来捕获扩展上下文失效错误
 window.addEventListener('error', (event) => {
-  if (event.error && event.error.message && 
-      event.error.message.includes('Extension context invalidated')) {
+  if (event.error && event.error.message &&
+    event.error.message.includes('Extension context invalidated')) {
     console.log('扩展上下文已失效，这是正常现象，不影响功能');
     event.preventDefault(); // 阻止错误显示在控制台
   }
 });
 
 // 添加获取关注列表的功能
-async function getFollowingList(limit = 100, keepList = new Set()) {
+async function getFollowingList(limit = 100, keepList = new Set(), scanOrder = 'bottom') {
   let followingList = [];
   let shouldStop = false;
   let nonKeptCount = 0; // 计数器：未标记为保留的账号数量
   const targetNonKeptCount = limit; // 目标未保留账号数量
-  
+
   console.log(`搜索目标: ${targetNonKeptCount} 个未标记保留的账号, 已有 ${keepList.size} 个保留账号`);
-  
+
   // Listen for stop messages
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'stop') {
       shouldStop = true;
-      sendResponse({status: 'stopped'});
+      sendResponse({ status: 'stopped' });
       return true;
     }
   });
@@ -69,28 +69,28 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
   // 定义一个独立的滚动到页面底部的函数
   async function scrollToBottom() {
     console.log("开始执行滚动到页面底部操作...");
-    
+
     let lastHeight = 0;
     let unchangedCount = 0;
     const maxUnchanged = 10; // 增加更多的尝试次数，确保真正到达底部
-    
+
     // 首先滚动到当前底部
     window.scrollTo(0, document.body.scrollHeight);
     await delay(1500);
-    
+
     lastHeight = document.body.scrollHeight;
     console.log(`初始高度: ${lastHeight}px`);
-    
+
     // 循环滚动直到真正到达底部
     while (unchangedCount < maxUnchanged && !shouldStop) {
       // 滚动到文档底部
       window.scrollTo(0, document.body.scrollHeight);
       await delay(1500); // 等待加载
-      
+
       // 检查高度是否变化
       const newHeight = document.body.scrollHeight;
       console.log(`当前高度: ${newHeight}px, 上次高度: ${lastHeight}px, 未变化计数: ${unchangedCount}`);
-      
+
       if (newHeight === lastHeight) {
         unchangedCount++;
         console.log(`页面高度未变化 (${unchangedCount}/${maxUnchanged})`);
@@ -100,7 +100,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         console.log(`页面高度变化，重置计数`);
       }
     }
-    
+
     console.log(`已到达页面底部，最终高度: ${lastHeight}px`);
     return true;
   }
@@ -111,31 +111,31 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
     nonKeptCount = followingList.filter(account => !keepList.has(account.username)).length;
     const keptCount = followingList.filter(account => keepList.has(account.username)).length;
     console.log(`向下滚动前: 共${followingList.length}个账号, 其中${nonKeptCount}个未标记保留, ${keptCount}个已标记保留`);
-    
+
     // 先确保滚动到页面真正底部，加载所有内容
     await scrollToBottom();
-    
+
     if (shouldStop) return;
-    
+
     // 提取所有可见账号
     const cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
     let newAccountsFound = 0;
     let newNonKeptFound = 0;
-    
+
     for (let i = 0; i < cells.length; i++) {
       if (shouldStop) break;
-      
+
       const accountInfo = extractAccountInfo(cells[i], keepList);
       if (accountInfo && !followingList.some(item => item.username === accountInfo.username)) {
         followingList.push(accountInfo);
         newAccountsFound++;
-        
+
         // 更新未标记为保留的账号计数
         if (!keepList.has(accountInfo.username)) {
           nonKeptCount++;
           newNonKeptFound++;
         }
-        
+
         // 如果找到足够的未标记保留的账号，可以停止
         if (nonKeptCount >= targetNonKeptCount) {
           console.log(`已找到足够的未标记保留账号: ${nonKeptCount}/${targetNonKeptCount}`);
@@ -143,9 +143,9 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         }
       }
     }
-    
+
     console.log(`本次滚动找到 ${newAccountsFound} 个新账号 (${newNonKeptFound} 个未标记保留), 当前总计: ${nonKeptCount}/${targetNonKeptCount} 个未标记保留`);
-    
+
     // 更新提取进度
     try {
       chrome.runtime.sendMessage({
@@ -156,54 +156,54 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
     } catch (error) {
       console.log('无法发送进度更新 - 弹出窗口可能已关闭');
     }
-    
+
     const finalKeptCount = followingList.filter(account => keepList.has(account.username)).length;
     console.log(`向下滚动后: 共${followingList.length}个账号, 其中${nonKeptCount}个未标记保留, ${finalKeptCount}个已标记保留`);
   };
-  
+
   // 向上滚动查找账号
   const scrollUpToLoadMore = async () => {
     let lastHeight = document.body.scrollHeight;
     let unchangedCount = 0;
     const maxUnchanged = 3;
-    
+
     // 更新账号计数
     nonKeptCount = followingList.filter(account => !keepList.has(account.username)).length;
     const keptCount = followingList.filter(account => keepList.has(account.username)).length;
     console.log(`向上滚动前: 共${followingList.length}个账号, 其中${nonKeptCount}个未标记保留, ${keptCount}个已标记保留`);
-    
+
     // 如果已经找到足够多的未标记保留账号，可以跳过
     if (nonKeptCount >= targetNonKeptCount) {
       console.log(`已经找到足够的未标记保留账号(${nonKeptCount}/${targetNonKeptCount})，不需要向上滚动`);
       return;
     }
-    
+
     // 记录初始滚动位置
     let previousScrollY = window.scrollY;
     let scrollAttempts = 0;
     let reachedTop = false;
-    
+
     // 用于追踪页面内容变化
     let previousVisibleAccounts = new Set();
     let sameContentCount = 0;
     const maxSameContent = 10; // 如果连续10次滚动看到相同的账号，则认为已达极限
-    
+
     console.log('开始从底部向上滚动搜索账号...');
-    
+
     // 无限滚动，直到找到足够的账号、到达页面顶部、用户停止，或页面内容不再变化
     while (nonKeptCount < targetNonKeptCount && !shouldStop && !reachedTop && sameContentCount < maxSameContent) {
       // 向上滚动一屏高度
       window.scrollBy(0, -window.innerHeight * 0.9);
       await delay(1500);
-      
+
       if (shouldStop) break;
-      
+
       scrollAttempts++;
-      
+
       // 检查滚动位置是否有实际变化
       const currentScrollY = window.scrollY;
       console.log(`滚动位置: ${currentScrollY}px, 上次位置: ${previousScrollY}px, 滚动次数: ${scrollAttempts}`);
-      
+
       // 如果滚动位置接近零，已经到达顶部
       if (currentScrollY < 100) {
         console.log('已接近页面顶部 (scrollY < 100px)');
@@ -212,7 +212,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       } else if (Math.abs(currentScrollY - previousScrollY) < 50) {
         console.log('滚动位置变化很小，可能接近页面顶部');
         unchangedCount++;
-        
+
         if (unchangedCount >= 2) {
           console.log('连续多次滚动无明显变化，确认已达到页面顶部');
           reachedTop = true;
@@ -222,38 +222,38 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         unchangedCount = 0;
         previousScrollY = currentScrollY;
       }
-      
+
       // 提取当前可见的账号信息
       const cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
       let newAccountsFound = 0;
       let newNonKeptFound = 0;
-      
+
       // 收集当前可见账号的用户名
       const currentVisibleAccounts = new Set();
-      
+
       for (const cell of cells) {
         const accountInfo = extractAccountInfo(cell, keepList);
         if (!accountInfo) continue;
-        
+
         // 将用户名添加到当前可见账号集合
         currentVisibleAccounts.add(accountInfo.username);
-        
+
         // 如果是新账号，添加到关注列表
         if (!followingList.some(a => a.username === accountInfo.username)) {
           followingList.push(accountInfo);
           newAccountsFound++;
-          
+
           // 更新未标记为保留的账号计数
           if (!keepList.has(accountInfo.username)) {
             nonKeptCount++;
             newNonKeptFound++;
           }
-          
+
           // 周期性发送进度更新 (每10个账号更新一次)
           if (nonKeptCount % 10 === 0) {
             sendPreviewProgress();
           }
-          
+
           // 如果找到足够的未标记保留的账号，可以停止
           if (nonKeptCount >= targetNonKeptCount) {
             console.log(`已找到足够的未标记保留账号: ${nonKeptCount}/${targetNonKeptCount}`);
@@ -262,14 +262,14 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           }
         }
       }
-      
+
       console.log(`本次滚动找到 ${newAccountsFound} 个新账号 (${newNonKeptFound} 个未标记保留), 当前总计: ${nonKeptCount}/${targetNonKeptCount} 个未标记保留`);
-      
+
       // 检查页面内容是否变化
       if (currentVisibleAccounts.size > 0) {
         // 比较当前可见账号和之前可见账号
         let sameContent = true;
-        
+
         // 检查数量是否相同
         if (currentVisibleAccounts.size !== previousVisibleAccounts.size) {
           sameContent = false;
@@ -282,7 +282,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
             }
           }
         }
-        
+
         if (sameContent && currentVisibleAccounts.size > 0) {
           sameContentCount++;
           console.log(`页面内容未变化 (${sameContentCount}/${maxSameContent})`);
@@ -293,7 +293,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           console.log(`页面内容已更新，发现 ${currentVisibleAccounts.size} 个账号`);
         }
       }
-      
+
       // 更新提取进度
       try {
         chrome.runtime.sendMessage({
@@ -305,7 +305,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         console.log('无法发送进度更新 - 弹出窗口可能已关闭');
       }
     }
-    
+
     // 记录最终状态
     if (reachedTop) {
       console.log('已到达页面顶部，完成向上滚动搜索');
@@ -314,11 +314,113 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
     } else if (sameContentCount >= maxSameContent) {
       console.log(`连续 ${maxSameContent} 次滚动页面内容未变化，可能已达到加载极限，停止向上滚动`);
     }
-    
+
     const finalKeptCount = followingList.filter(account => keepList.has(account.username)).length;
     console.log(`向上滚动后: 共${followingList.length}个账号, 其中${nonKeptCount}个未标记保留, ${finalKeptCount}个已标记保留`);
   };
-  
+
+  // 向下滚动扫描账号 (用于从顶部开始模式)
+  const scrollDownToScan = async () => {
+    let previousScrollY = window.scrollY;
+    let scrollAttempts = 0;
+    let reachedBottom = false;
+    let unchangedHeightCount = 0;
+    let lastHeight = document.body.scrollHeight;
+
+    // 用于追踪页面内容变化
+    let previousVisibleAccounts = new Set();
+    let sameContentCount = 0;
+    const maxSameContent = 10;
+
+    console.log('开始从顶部向下滚动搜索账号...');
+
+    while (nonKeptCount < targetNonKeptCount && !shouldStop && !reachedBottom && sameContentCount < maxSameContent) {
+      // 向下滚动一屏高度
+      window.scrollBy(0, window.innerHeight * 0.9);
+      await delay(1500);
+
+      if (shouldStop) break;
+
+      scrollAttempts++;
+
+      // 检查高度变化
+      const currentHeight = document.body.scrollHeight;
+      const currentScrollY = window.scrollY;
+
+      console.log(`滚动位置: ${currentScrollY}px, 页面高度: ${currentHeight}px, 滚动次数: ${scrollAttempts}`);
+
+      if (currentHeight === lastHeight && Math.abs(currentScrollY - previousScrollY) < 50) {
+        unchangedHeightCount++;
+        if (unchangedHeightCount >= 3) {
+          console.log('连续多次滚动无变化，确认已到达页面底部');
+          reachedBottom = true;
+          break;
+        }
+      } else {
+        unchangedHeightCount = 0;
+        lastHeight = currentHeight;
+        previousScrollY = currentScrollY;
+      }
+
+      // 提取当前可见的账号信息
+      const cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
+      let newAccountsFound = 0;
+      let newNonKeptFound = 0;
+      const currentVisibleAccounts = new Set();
+
+      for (const cell of cells) {
+        const accountInfo = extractAccountInfo(cell, keepList);
+        if (!accountInfo) continue;
+
+        currentVisibleAccounts.add(accountInfo.username);
+
+        if (!followingList.some(a => a.username === accountInfo.username)) {
+          followingList.push(accountInfo);
+          newAccountsFound++;
+
+          if (!keepList.has(accountInfo.username)) {
+            nonKeptCount++;
+            newNonKeptFound++;
+          }
+
+          if (nonKeptCount % 10 === 0) {
+            sendPreviewProgress();
+          }
+
+          if (nonKeptCount >= targetNonKeptCount) {
+            console.log(`已找到足够的未标记保留账号: ${nonKeptCount}/${targetNonKeptCount}`);
+            sendPreviewProgress();
+            break;
+          }
+        }
+      }
+
+      console.log(`本次滚动找到 ${newAccountsFound} 个新账号 (${newNonKeptFound} 个未标记保留), 当前总计: ${nonKeptCount}/${targetNonKeptCount} 个未标记保留`);
+
+      // 内容重复性检查
+      if (currentVisibleAccounts.size > 0) {
+        let sameContent = currentVisibleAccounts.size === previousVisibleAccounts.size;
+        if (sameContent) {
+          for (const username of currentVisibleAccounts) {
+            if (!previousVisibleAccounts.has(username)) {
+              sameContent = false;
+              break;
+            }
+          }
+        }
+
+        if (sameContent) {
+          sameContentCount++;
+        } else {
+          sameContentCount = 0;
+          previousVisibleAccounts = new Set(currentVisibleAccounts);
+        }
+      }
+
+      sendPreviewProgress();
+    }
+  };
+
   // 添加发送预览进度的辅助函数
   const sendPreviewProgress = () => {
     try {
@@ -331,7 +433,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       console.log('无法发送进度更新 - 弹出窗口可能已关闭');
     }
   };
-  
+
   // 修改提取账号信息的方法，增加排除"已关注你"用户的功能，并高亮待取消关注的用户块
   const extractAccountInfo = (cell, keepList) => {
     try {
@@ -342,14 +444,14 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         if (indicatorText.includes('关注了你') || indicatorText.includes('Follows you')) {
           // console.log('跳过已关注你的用户');
           // 重置背景色以防万一
-          cell.style.backgroundColor = ''; 
+          cell.style.backgroundColor = '';
           return null;
         }
       }
 
       // 按钮类型1: 带有data-testid属性且包含unfollow的按钮
       let followButton = cell.querySelector('button[data-testid*="unfollow"]');
-      
+
       // 按钮类型2: 文本内容包含"正在关注"的按钮
       if (!followButton) {
         const allButtons = cell.querySelectorAll('button');
@@ -360,15 +462,15 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           }
         }
       }
-      
+
       // 如果没找到关注按钮，这可能不是我们要找的单元格
       if (!followButton) {
         return null;
       }
-      
+
       let displayName = '';
       let username = '';
-      
+
       // 尝试从aria-label提取用户名
       const ariaLabel = followButton.getAttribute('aria-label');
       if (ariaLabel) {
@@ -378,7 +480,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           username = match[1];
         }
       }
-      
+
       // 如果从aria-label找不到，尝试查找所有可能包含@的span
       if (!username) {
         const allSpans = cell.querySelectorAll('span');
@@ -390,27 +492,27 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           }
         }
       }
-      
+
       // 寻找显示名称 - 遍历所有文本元素找到最可能的显示名称
       // 显示名称通常是单元格中的粗体文本
       const allTextElements = cell.querySelectorAll('div[dir="ltr"], span');
       let possibleNames = [];
-      
+
       for (const elem of allTextElements) {
         const text = elem.textContent.trim();
         // 排除用户名和按钮文本
-        if (text && 
-            !text.startsWith('@') && 
-            !text.includes('正在关注') &&
-            !text.includes('Following') &&
-            !text.includes('关注了你') &&
-            !text.includes('Follows you') &&
-            text.length < 50) { // 显示名称通常不会太长
-            
+        if (text &&
+          !text.startsWith('@') &&
+          !text.includes('正在关注') &&
+          !text.includes('Following') &&
+          !text.includes('关注了你') &&
+          !text.includes('Follows you') &&
+          text.length < 50) { // 显示名称通常不会太长
+
           // 查看样式，粗体元素更可能是名称
           const style = window.getComputedStyle(elem);
           const fontWeight = parseInt(style.fontWeight, 10) || 400;
-          
+
           possibleNames.push({
             text,
             weight: fontWeight,
@@ -419,7 +521,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           });
         }
       }
-      
+
       // 按权重和位置排序
       possibleNames.sort((a, b) => {
         // 权重差异显著时优先考虑权重
@@ -429,11 +531,11 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         // 否则考虑位置
         return a.position - b.position;
       });
-      
+
       if (possibleNames.length > 0) {
         displayName = possibleNames[0].text;
       }
-      
+
       // 如果仍然没有找到，尝试使用href属性
       if (!displayName || !username) {
         const links = cell.querySelectorAll('a[href*="/"]');
@@ -441,13 +543,13 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           const href = link.getAttribute('href');
           if (href && href.startsWith('/') && !href.includes('/search') && !href.includes('/hashtag')) {
             const potentialUsername = href.split('/').filter(Boolean)[0];
-            
+
             // 用户名通常只包含字母、数字和下划线
             if (potentialUsername && /^[a-zA-Z0-9_]+$/.test(potentialUsername)) {
               if (!username) {
                 username = potentialUsername;
               }
-              
+
               // 如果找不到显示名称，尝试从链接文本中获取
               if (!displayName) {
                 const linkText = link.textContent.trim();
@@ -459,31 +561,31 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
           }
         }
       }
-      
+
       // 调试信息
       // console.log('提取账号:', { displayName, username, followButtonText: followButton.textContent });
-      
+
       // 确保有有效数据
       if (!username) {
         // 重置背景色
         cell.style.backgroundColor = '';
         return null;
       }
-      
+
       // 如果仍然没有显示名称，使用用户名作为备用
       if (!displayName) {
         displayName = username;
       }
-      
+
       // **新增：检查是否在保留列表，如果不在则高亮**
       if (!keepList.has(username)) {
         // console.log(`Highlighting @${username} for unfollow.`);
         cell.style.backgroundColor = 'rgba(255, 255, 0, 0.3)'; // 使用带透明度的黄色
       } else {
         // 如果在保留列表，确保没有背景色
-        cell.style.backgroundColor = ''; 
+        cell.style.backgroundColor = '';
       }
-      
+
       return {
         displayName,
         username
@@ -493,7 +595,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       return null;
     }
   };
-  
+
   // 查找完整的Timeline以包含所有保留账号
   async function findAllKeptAccounts() {
     console.log('正在尝试查找所有已标记为保留的账号...');
@@ -501,7 +603,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       console.log('没有标记为保留的账号，跳过此步骤');
       return;
     }
-    
+
     // 创建保留账号的集合，用于追踪我们已经找到了哪些保留账号
     const foundKeptAccounts = new Set();
     followingList.forEach(account => {
@@ -509,40 +611,40 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         foundKeptAccounts.add(account.username);
       }
     });
-    
+
     // 计算有多少保留账号尚未找到
     const missingKeptAccounts = new Set([...keepList].filter(username => !foundKeptAccounts.has(username)));
     console.log(`当前已找到 ${foundKeptAccounts.size}/${keepList.size} 个保留账号，还有 ${missingKeptAccounts.size} 个未找到`);
-    
+
     if (missingKeptAccounts.size === 0) {
       console.log('所有保留账号已找到，无需额外搜索');
       return;
     }
-    
+
     // 记录当前滚动位置，以便稍后保持位置不变
     const currentScrollPosition = window.scrollY;
     console.log(`保存当前滚动位置: ${currentScrollPosition}px`);
-    
+
     // 在当前可视区域搜索保留账号
     console.log('在当前位置搜索保留账号...');
-    
+
     // 向下滚动查找所有账号
     let lastHeight = 0;
     let unchangedCount = 0;
     const maxUnchanged = 3;
     let scrollCount = 0;
     const maxScrolls = 5; // 减少最大滚动次数，避免滚动太远
-    
+
     while (missingKeptAccounts.size > 0 && unchangedCount < maxUnchanged && scrollCount < maxScrolls && !shouldStop) {
       scrollCount++;
       console.log(`轻微滚动查找保留账号 (${scrollCount}/${maxScrolls})...`);
-      
+
       // 仅在当前视图附近小范围滚动
       window.scrollBy(0, window.innerHeight * 0.5);
       await delay(1500);
-      
+
       if (shouldStop) break;
-      
+
       const newHeight = document.body.scrollHeight;
       if (newHeight === lastHeight) {
         unchangedCount++;
@@ -550,15 +652,15 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         unchangedCount = 0;
         lastHeight = newHeight;
       }
-      
+
       // 提取当前可见的账号
       const cells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
       let newKeptFound = 0;
-      
+
       for (const cell of cells) {
         const accountInfo = extractAccountInfo(cell, keepList);
         if (!accountInfo) continue;
-        
+
         // 检查是否是我们正在寻找的保留账号
         if (keepList.has(accountInfo.username) && !foundKeptAccounts.has(accountInfo.username)) {
           // 添加到账号列表
@@ -567,28 +669,28 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
             foundKeptAccounts.add(accountInfo.username);
             missingKeptAccounts.delete(accountInfo.username);
             newKeptFound++;
-            
+
             console.log(`找到保留账号: ${accountInfo.displayName} (@${accountInfo.username})`);
           }
         }
       }
-      
+
       console.log(`这一轮找到 ${newKeptFound} 个新的保留账号，还有 ${missingKeptAccounts.size} 个未找到`);
-      
+
       // 如果找到了所有保留账号或者到达页面底部，就停止
       if (missingKeptAccounts.size === 0 || (cells.length < 10 && unchangedCount >= 2)) {
         break;
       }
     }
-    
+
     console.log(`保留账号搜索完成，找到 ${foundKeptAccounts.size}/${keepList.size} 个，仍有 ${missingKeptAccounts.size} 个未找到`);
-    
+
     // 恢复到原始滚动位置
     console.log(`恢复滚动位置到: ${currentScrollPosition}px`);
     window.scrollTo(0, currentScrollPosition);
     await delay(1000);
   }
-  
+
   try {
     // 检查是否在关注页面
     if (!window.location.pathname.endsWith('/following')) {
@@ -600,28 +702,36 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       window.location.href = `${window.location.origin}/${username}/following`;
       await new Promise(resolve => setTimeout(resolve, 3000));
     }
-    
+
     console.log('开始获取关注列表...');
     console.log(`已有 ${keepList.size} 个保留账号列表`);
-    
+
     // 等待用户单元格加载
     await waitForElement('[data-testid="cellInnerDiv"]', 10000);
-    
-    // 先滚动到页面底部
-    console.log('首先滚动到页面底部...');
-    await scrollToBottom();
-    
-    if (shouldStop) {
-      console.log('用户停止了操作');
-      return [];
+
+    // 根据扫描方向决定初始操作
+    if (scanOrder === 'bottom') {
+      // 先滚动到页面底部
+      console.log('首先滚动到页面底部...');
+      await scrollToBottom();
+
+      if (shouldStop) {
+        console.log('用户停止了操作');
+        return [];
+      }
+
+      console.log('已滚动到页面底部，开始从下往上提取账号');
+    } else {
+      console.log('模式：从顶部开始，正在滚动到页面顶部...');
+      window.scrollTo(0, 0);
+      await delay(1000);
+      console.log('已到达页面顶部，开始提取账号并向下搜索');
     }
-    
-    console.log('已滚动到页面底部，开始从下往上提取账号');
-    
+
     // 初始提取当前可见的账号（从底部开始）
     const initialCells = document.querySelectorAll('[data-testid="cellInnerDiv"]');
     console.log(`找到 ${initialCells.length} 个初始单元格`);
-    
+
     // 遍历所有单元格
     for (const cell of initialCells) {
       if (shouldStop) break;
@@ -629,17 +739,17 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       if (accountInfo) {
         if (!followingList.some(item => item.username === accountInfo.username)) {
           followingList.push(accountInfo);
-          
+
           // 更新未标记为保留的账号计数
           if (!keepList.has(accountInfo.username)) {
             nonKeptCount++;
           }
-          
+
           // 周期性发送进度更新 (每10个账号更新一次)
           if (nonKeptCount % 10 === 0) {
             sendPreviewProgress();
           }
-          
+
           // 如果初始扫描已经找到足够的未标记保留账号，直接停止
           if (nonKeptCount >= targetNonKeptCount) {
             console.log(`初始扫描已找到足够的未标记保留账号: ${nonKeptCount}/${targetNonKeptCount}`);
@@ -649,31 +759,34 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         }
       }
     }
-    
+
     console.log(`初始提取完成，找到 ${followingList.length} 个账号，${nonKeptCount} 个未标记保留`);
     sendPreviewProgress(); // 发送进度更新
-    
-    // 如果需要，继续从底部向上滚动加载更多
+
+    // 如果需要，继续滚动加载更多
     if (nonKeptCount < targetNonKeptCount && !shouldStop) {
-      // 从底部向上滚动查找
-      await scrollUpToLoadMore();
-      
-      // 检查scrollUpToLoadMore是否因到达顶部而停止
-      const reachedTop = window.scrollY < 200;
-      
-      // 如果还没找到足够的未标记保留账号，且没有到达顶部，才尝试向下滚动
-      if (nonKeptCount < targetNonKeptCount && !shouldStop && !reachedTop) {
-        console.log("向上滚动未找到足够账号，且未到达顶部，尝试向下滚动...");
-        await scrollDownToLoadMore();
-      } else if (reachedTop) {
-        console.log("已经到达页面顶部，不再执行向下滚动搜索");
+      if (scanOrder === 'bottom') {
+        // 从底部向上滚动查找
+        await scrollUpToLoadMore();
+
+        // 检查scrollUpToLoadMore是否因到达顶部而停止
+        const reachedTop = window.scrollY < 200;
+
+        // 如果还没找到足够的未标记保留账号，且没有到达顶部，才尝试向下滚动
+        if (nonKeptCount < targetNonKeptCount && !shouldStop && !reachedTop) {
+          console.log("向上滚动未找到足够账号，且未到达顶部，尝试向下滚动...");
+          await scrollDownToLoadMore();
+        }
+      } else {
+        // 从当前位置向下滚动查找
+        await scrollDownToScan();
       }
     }
-    
+
     // 保存当前滚动位置，用于在搜索保留账号后恢复
     const currentPosition = window.scrollY;
     console.log(`保存当前滚动位置: ${currentPosition}px，用于在搜索保留账号后恢复`);
-    
+
     // 仅当找到足够的未标记保留账号，或者已经达到页面顶部时，才搜索保留账号
     // 这确保了我们不会在向上滚动搜索未完成时中断搜索过程
     if ((nonKeptCount >= targetNonKeptCount) || (window.scrollY < 200)) {
@@ -683,10 +796,10 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       } else {
         console.log(`虽然只找到 ${nonKeptCount}/${targetNonKeptCount} 个账号，但已达页面顶部，继续搜索保留账号`);
       }
-      
+
       // 搜索保留账号
       await findAllKeptAccounts();
-      
+
       // 恢复滚动位置
       console.log(`恢复到保存的滚动位置: ${currentPosition}px`);
       window.scrollTo(0, currentPosition);
@@ -694,29 +807,29 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
     } else {
       console.log(`仅找到 ${nonKeptCount}/${targetNonKeptCount} 个账号，且尚未到达页面顶部，跳过保留账号搜索步骤`);
     }
-    
+
     const finalKeptCount = followingList.filter(account => keepList.has(account.username)).length;
     nonKeptCount = followingList.filter(account => !keepList.has(account.username)).length;
     console.log(`完成加载，共找到 ${followingList.length} 个账号，其中 ${nonKeptCount} 个未标记保留，${finalKeptCount} 个已标记保留`);
-    
+
     // 裁剪未标记保留的账号至100个
     if (nonKeptCount > targetNonKeptCount) {
       console.log(`找到了 ${nonKeptCount} 个未标记保留账号，超过了目标 ${targetNonKeptCount}，将裁剪列表`);
-      
+
       // 先保留所有已标记为保留的账号
       const keptAccounts = followingList.filter(account => keepList.has(account.username));
-      
+
       // 再获取前100个未标记为保留的账号
       const nonKeptAccounts = followingList.filter(account => !keepList.has(account.username))
-                                        .slice(0, targetNonKeptCount);
-      
+        .slice(0, targetNonKeptCount);
+
       // 合并两个列表
       followingList = [...nonKeptAccounts, ...keptAccounts];
-      
+
       nonKeptCount = nonKeptAccounts.length;
       console.log(`裁剪后: 共${followingList.length}个账号，其中${nonKeptCount}个未标记保留，${keptAccounts.length}个已标记保留`);
     }
-    
+
     // 去重
     const uniqueAccounts = [];
     const seen = new Set();
@@ -726,9 +839,9 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
         uniqueAccounts.push(account);
       }
     }
-    
+
     console.log(`去重后剩余 ${uniqueAccounts.length} 个账号`);
-    
+
     // 排序：将未标记保留的账号排在前面
     uniqueAccounts.sort((a, b) => {
       const aIsKept = keepList.has(a.username);
@@ -737,7 +850,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
       if (!aIsKept && bIsKept) return -1;
       return 0;
     });
-    
+
     // 返回列表给popup
     return uniqueAccounts;
   } catch (error) {
@@ -749,7 +862,7 @@ async function getFollowingList(limit = 100, keepList = new Set()) {
 // 添加新函数，用于取消关注选择的账号
 async function unfollowSelectedAccounts(accountsList) {
   console.log(`unfollowSelectedAccounts 被调用，收到 ${accountsList?.length || 0} 个账号`);
-  
+
   let totalFound = accountsList?.length || 0;
   let unfollowedCount = 0;
   let shouldStop = false;
@@ -773,29 +886,29 @@ async function unfollowSelectedAccounts(accountsList) {
                 resolve(false);
                 return;
               }
-              
+
               // 检查是否有保存的任务状态
-              if (result.unfollowTask && 
-                  result.unfollowTask.remainingAccounts && 
-                  result.unfollowTask.remainingAccounts.length > 0) {
+              if (result.unfollowTask &&
+                result.unfollowTask.remainingAccounts &&
+                result.unfollowTask.remainingAccounts.length > 0) {
                 console.log('恢复未完成的取消关注任务');
                 remainingAccounts = result.unfollowTask.remainingAccounts;
                 unfollowedAccounts = result.unfollowTask.unfollowedAccounts || [];
                 unfollowedCount = unfollowedAccounts.length;
                 totalFound = unfollowedCount + remainingAccounts.length;
-                
+
                 console.log(`已恢复任务: 总计 ${totalFound} 个账号, 已处理 ${unfollowedCount} 个, 剩余 ${remainingAccounts.length} 个`);
                 resolve(true);
                 return;
-              } 
-              
+              }
+
               // 如果没有保存的任务状态，但有进度信息，可能是中断的任务
               if (result.progress && result.progress.totalFound > 0 && result.unfollowList && result.unfollowList.length > 0) {
                 console.log('检测到中断的任务，尝试恢复...');
-                
+
                 const completedCount = result.progress.unfollowed || 0;
                 console.log(`进度信息: 共 ${result.progress.totalFound} 个账号, 已处理 ${completedCount} 个`);
-                
+
                 // 使用传入的账号列表
                 if (accountsList && accountsList.length > 0) {
                   remainingAccounts = [...accountsList];
@@ -806,18 +919,18 @@ async function unfollowSelectedAccounts(accountsList) {
                   resolve(false);
                   return;
                 }
-                
+
                 // 没有传入账号列表，尝试从storage恢复
                 remainingAccounts = [...result.unfollowList];
                 unfollowedAccounts = [];
                 unfollowedCount = completedCount;
                 totalFound = remainingAccounts.length + unfollowedCount;
-                
+
                 console.log(`从中断状态恢复: 共 ${totalFound} 个账号, 已处理 ${unfollowedCount} 个, 剩余 ${remainingAccounts.length} 个`);
                 resolve(true);
                 return;
               }
-              
+
               // 如果没有状态但有账号列表，使用传入的账号列表
               if (!result.unfollowTask && accountsList && accountsList.length > 0) {
                 console.log(`从传入的账号列表开始新任务: ${accountsList.length} 个账号`);
@@ -828,7 +941,7 @@ async function unfollowSelectedAccounts(accountsList) {
                 resolve(false);
                 return;
               }
-              
+
               // 最后尝试从storage直接读取账号列表
               if (!accountsList || accountsList.length === 0) {
                 chrome.storage.local.get(['unfollowList'], (listResult) => {
@@ -868,12 +981,12 @@ async function unfollowSelectedAccounts(accountsList) {
         console.error('保存任务状态时发现 remainingAccounts 不是数组');
         remainingAccounts = [];
       }
-      
+
       if (!Array.isArray(unfollowedAccounts)) {
         console.error('保存任务状态时发现 unfollowedAccounts 不是数组');
         unfollowedAccounts = [];
       }
-      
+
       const task = {
         remainingAccounts: remainingAccounts,
         unfollowedAccounts: unfollowedAccounts,
@@ -882,16 +995,16 @@ async function unfollowSelectedAccounts(accountsList) {
         totalFound: totalFound,
         unfollowedCount: unfollowedCount
       };
-      
+
       // 先更新内部计数，保证一致性
       unfollowedCount = unfollowedAccounts.length;
       totalFound = unfollowedCount + remainingAccounts.length;
-      
+
       // 使用可靠的Promise包装
       return new Promise((resolve, reject) => {
         try {
           // 同时更新多个相关状态
-          chrome.storage.local.set({ 
+          chrome.storage.local.set({
             unfollowTask: task,
             // 同时更新进度信息
             progress: {
@@ -933,34 +1046,34 @@ async function unfollowSelectedAccounts(accountsList) {
   const removeAccountAndSave = async (account) => {
     // 为当前账号创建一个日志记录器
     const logger = createDebugLogger(account.username);
-    
+
     try {
       // 从待取消关注列表中移除
       if (!Array.isArray(remainingAccounts)) {
         logger('警告: remainingAccounts 不是数组，正在尝试修复');
         remainingAccounts = [];
       }
-      
+
       remainingAccounts = remainingAccounts.filter(a => a.username !== account.username);
-      
+
       // 添加到已取消关注列表
       if (!Array.isArray(unfollowedAccounts)) {
         logger('警告: unfollowedAccounts 不是数组，正在尝试修复');
         unfollowedAccounts = [];
       }
-      
+
       unfollowedAccounts.push({
         ...account,
         unfollowedAt: Date.now()
       });
-      
+
       // 更新存储
       try {
         await saveTaskState();
       } catch (error) {
         logger(`保存任务状态时出错，继续执行: ${error.message}`);
       }
-      
+
       // 更新已保存的预览账号列表，移除已取消关注的账号
       try {
         chrome.storage.local.get(['previewAccounts'], (result) => {
@@ -968,12 +1081,12 @@ async function unfollowSelectedAccounts(accountsList) {
             logger('获取预览账号列表时出错: ' + chrome.runtime.lastError.message);
             return;
           }
-          
+
           if (result.previewAccounts && Array.isArray(result.previewAccounts)) {
             const updatedPreviewAccounts = result.previewAccounts.filter(
               a => a.username !== account.username || account.isKept
             );
-            
+
             chrome.storage.local.set({ previewAccounts: updatedPreviewAccounts }, () => {
               if (chrome.runtime.lastError) {
                 logger('保存更新后的预览账号列表时出错: ' + chrome.runtime.lastError.message);
@@ -987,7 +1100,7 @@ async function unfollowSelectedAccounts(accountsList) {
         // 只记录错误但不影响执行流程
         logger(`处理预览账号列表时出错: ${error.message}`);
       }
-      
+
       return true;
     } catch (error) {
       logger(`从列表中移除账号时出错: ${error.message}`);
@@ -1014,13 +1127,13 @@ async function unfollowSelectedAccounts(accountsList) {
         resolve(false);
       }
     });
-    
+
     // 如果设置了自动确认，跳过对话框直接返回true
     if (autoConfirm) {
       console.log('自动确认已启用，跳过确认对话框');
       return true;
     }
-    
+
     return new Promise((resolve) => {
       try {
         // 创建对话框元素
@@ -1039,7 +1152,7 @@ async function unfollowSelectedAccounts(accountsList) {
           opacity: 0;
           transition: opacity 0.3s ease;
         `;
-        
+
         const dialogBox = document.createElement('div');
         dialogBox.style.cssText = `
           width: 90%;
@@ -1054,7 +1167,7 @@ async function unfollowSelectedAccounts(accountsList) {
           transition: transform 0.3s ease;
           box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
         `;
-        
+
         // 标题
         const title = document.createElement('h2');
         title.style.cssText = `
@@ -1066,7 +1179,7 @@ async function unfollowSelectedAccounts(accountsList) {
         `;
         title.textContent = '确认取消关注以下账号';
         dialogBox.appendChild(title);
-        
+
         // 说明文字
         const description = document.createElement('p');
         description.style.cssText = `
@@ -1078,7 +1191,7 @@ async function unfollowSelectedAccounts(accountsList) {
         `;
         description.innerHTML = '将取消关注以下账号。<strong>即使扩展窗口关闭，任务也会在后台继续执行。</strong>';
         dialogBox.appendChild(description);
-        
+
         // 账号列表
         const accountsList = document.createElement('div');
         accountsList.style.cssText = `
@@ -1089,7 +1202,7 @@ async function unfollowSelectedAccounts(accountsList) {
           border-radius: 8px;
           padding: 5px 0;
         `;
-        
+
         remainingAccounts.forEach((account, index) => {
           const accountItem = document.createElement('div');
           accountItem.style.cssText = `
@@ -1098,19 +1211,19 @@ async function unfollowSelectedAccounts(accountsList) {
             align-items: center;
             border-bottom: ${index < remainingAccounts.length - 1 ? '1px solid #E1E8ED' : 'none'};
           `;
-          
+
           const accountText = document.createElement('div');
           accountText.style.cssText = `
             flex: 1;
           `;
           accountText.innerHTML = `<strong>${account.displayName}</strong> <span style="color: #657786;">@${account.username}</span>`;
           accountItem.appendChild(accountText);
-          
+
           accountsList.appendChild(accountItem);
         });
-        
+
         dialogBox.appendChild(accountsList);
-        
+
         // 统计信息
         const stats = document.createElement('p');
         stats.style.cssText = `
@@ -1122,7 +1235,7 @@ async function unfollowSelectedAccounts(accountsList) {
         `;
         stats.textContent = `共 ${remainingAccounts.length} 个账号将被取消关注`;
         dialogBox.appendChild(stats);
-        
+
         // 添加自动确认选项
         const autoConfirmContainer = document.createElement('div');
         autoConfirmContainer.style.cssText = `
@@ -1131,14 +1244,14 @@ async function unfollowSelectedAccounts(accountsList) {
           justify-content: center;
           margin: 15px 0;
         `;
-        
+
         const autoConfirmCheckbox = document.createElement('input');
         autoConfirmCheckbox.type = 'checkbox';
         autoConfirmCheckbox.id = 'autoConfirmCheckbox';
         autoConfirmCheckbox.style.cssText = `
           margin-right: 8px;
         `;
-        
+
         const autoConfirmLabel = document.createElement('label');
         autoConfirmLabel.htmlFor = 'autoConfirmCheckbox';
         autoConfirmLabel.textContent = '下次自动确认（不再显示此对话框）';
@@ -1146,11 +1259,11 @@ async function unfollowSelectedAccounts(accountsList) {
           font-size: 14px;
           color: #657786;
         `;
-        
+
         autoConfirmContainer.appendChild(autoConfirmCheckbox);
         autoConfirmContainer.appendChild(autoConfirmLabel);
         dialogBox.appendChild(autoConfirmContainer);
-        
+
         // 按钮区域
         const buttonContainer = document.createElement('div');
         buttonContainer.style.cssText = `
@@ -1159,7 +1272,7 @@ async function unfollowSelectedAccounts(accountsList) {
           margin-top: 20px;
           gap: 15px;
         `;
-        
+
         const cancelButton = document.createElement('button');
         cancelButton.style.cssText = `
           flex: 1;
@@ -1187,7 +1300,7 @@ async function unfollowSelectedAccounts(accountsList) {
           // 添加退出动画
           dialogOverlay.style.opacity = '0';
           dialogBox.style.transform = 'translateY(20px)';
-          
+
           setTimeout(() => {
             if (document.body.contains(dialogOverlay)) {
               document.body.removeChild(dialogOverlay);
@@ -1195,7 +1308,7 @@ async function unfollowSelectedAccounts(accountsList) {
             resolve(false);
           }, 300);
         });
-        
+
         const confirmButton = document.createElement('button');
         confirmButton.style.cssText = `
           flex: 1;
@@ -1221,7 +1334,7 @@ async function unfollowSelectedAccounts(accountsList) {
         });
         confirmButton.addEventListener('click', () => {
           console.log('确认按钮被点击');
-          
+
           // 保存自动确认设置
           if (autoConfirmCheckbox.checked) {
             try {
@@ -1230,10 +1343,10 @@ async function unfollowSelectedAccounts(accountsList) {
               console.log('保存自动确认设置时出错:', error);
             }
           }
-          
+
           // 在移除对话框前设置标志，表示任务已经开始
           try {
-            chrome.storage.local.set({ 
+            chrome.storage.local.set({
               isRunning: true,
               taskStarted: true,
               taskStartTime: Date.now()
@@ -1241,11 +1354,11 @@ async function unfollowSelectedAccounts(accountsList) {
           } catch (error) {
             console.log('保存任务状态时出错:', error);
           }
-          
+
           // 添加退出动画
           dialogOverlay.style.opacity = '0';
           dialogBox.style.transform = 'translateY(20px)';
-          
+
           setTimeout(() => {
             if (document.body.contains(dialogOverlay)) {
               document.body.removeChild(dialogOverlay);
@@ -1254,24 +1367,24 @@ async function unfollowSelectedAccounts(accountsList) {
             resolve(true);
           }, 300);
         });
-        
+
         buttonContainer.appendChild(cancelButton);
         buttonContainer.appendChild(confirmButton);
         dialogBox.appendChild(buttonContainer);
-        
+
         dialogOverlay.appendChild(dialogBox);
         document.body.appendChild(dialogOverlay);
-        
+
         // 添加显示动画
         setTimeout(() => {
           dialogOverlay.style.opacity = '1';
           dialogBox.style.transform = 'translateY(0)';
         }, 10);
-        
+
         // 确保对话框被正确关闭 - 即使扩展窗口关闭，也能够继续执行任务
         window.addEventListener('beforeunload', () => {
           const isChecked = autoConfirmCheckbox.checked;
-          
+
           if (isChecked) {
             try {
               chrome.storage.local.set({ autoConfirm: true });
@@ -1279,7 +1392,7 @@ async function unfollowSelectedAccounts(accountsList) {
               console.log('窗口关闭时保存自动确认设置出错:', error);
             }
           }
-          
+
           if (document.body.contains(dialogOverlay)) {
             document.body.removeChild(dialogOverlay);
           }
@@ -1317,20 +1430,20 @@ async function unfollowSelectedAccounts(accountsList) {
         opacity: 0;
         transition: transform 0.3s ease, opacity 0.3s ease;
       `;
-      
+
       const title = document.createElement('div');
       title.style.cssText = `
         font-size: 16px;
         font-weight: 700;
       `;
       title.textContent = '任务已完成！';
-      
+
       const message = document.createElement('div');
       message.style.cssText = `
         margin-top: 5px;
       `;
       message.textContent = `成功取消关注 ${unfollowedCount} 个账号。`;
-      
+
       const closeButton = document.createElement('button');
       closeButton.style.cssText = `
         position: absolute;
@@ -1356,25 +1469,25 @@ async function unfollowSelectedAccounts(accountsList) {
           }
         }, 300);
       });
-      
+
       notification.appendChild(closeButton);
       notification.appendChild(title);
       notification.appendChild(message);
-      
+
       document.body.appendChild(notification);
-      
+
       // 显示动画
       setTimeout(() => {
         notification.style.opacity = '1';
         notification.style.transform = 'translateY(0)';
       }, 10);
-      
+
       // 自动隐藏通知（30秒后）
       setTimeout(() => {
         if (document.body.contains(notification)) {
           notification.style.opacity = '0';
           notification.style.transform = 'translateY(-20px)';
-          
+
           setTimeout(() => {
             if (document.body.contains(notification)) {
               document.body.removeChild(notification);
@@ -1382,7 +1495,7 @@ async function unfollowSelectedAccounts(accountsList) {
           }, 300);
         }
       }, 30000);
-      
+
       // 同时尝试使用浏览器通知API（需要权限）
       try {
         if (Notification.permission === 'granted') {
@@ -1416,7 +1529,7 @@ async function unfollowSelectedAccounts(accountsList) {
         shouldStop = true;
         updateProgress('Stopping...', true);
         // 立即发送响应，不要使用异步
-        sendResponse({success: true, message: 'Task will stop soon'});
+        sendResponse({ success: true, message: 'Task will stop soon' });
       } else if (message.action === 'getProgress') {
         // 准备当前进度
         const progress = {
@@ -1426,18 +1539,18 @@ async function unfollowSelectedAccounts(accountsList) {
           status: rateLimitPause ? 'Rate limit detected. Waiting...' : 'Running...',
           rateLimited: rateLimitPause
         };
-        
+
         // 直接发送响应，不要使用异步
         sendResponse(progress);
       } else {
         // 处理其他消息类型
-        sendResponse({success: false, message: 'Unknown action'});
+        sendResponse({ success: false, message: 'Unknown action' });
       }
     } catch (error) {
       console.error('处理消息时出错:', error);
       // 尝试发送错误响应
       try {
-        sendResponse({success: false, error: error.message});
+        sendResponse({ success: false, error: error.message });
       } catch (e) {
         // 忽略二次错误
       }
@@ -1468,7 +1581,7 @@ async function unfollowSelectedAccounts(accountsList) {
         },
         isRunning: !completed
       });
-      
+
       // 使用try-catch包装消息发送，防止因popup关闭导致的错误中断任务
       try {
         chrome.runtime.sendMessage({
@@ -1528,14 +1641,14 @@ async function unfollowSelectedAccounts(accountsList) {
   // Scroll to element function
   const scrollToElement = (element) => {
     if (!element) return Promise.resolve();
-    
+
     try {
       // 直接使用 auto 行为进行即时滚动，不需要平滑动画
-      element.scrollIntoView({ 
-        behavior: 'auto', 
-        block: 'center' 
+      element.scrollIntoView({
+        behavior: 'auto',
+        block: 'center'
       });
-      
+
       // 超快速模式下几乎不等待
       return delay(config && config.ultraFastMode ? 200 : 300);
     } catch (e) {
@@ -1572,18 +1685,18 @@ async function unfollowSelectedAccounts(accountsList) {
     }
     return false; // Already on following page
   }
-  
+
   // 添加全局辅助函数，用于调试日志记录
   function createDebugLogger(username) {
     const logPrefix = username ? `[${username}]` : '[Debug]';
-    
+
     const handleRuntimeError = (error) => {
       if (error && error.message && (
-          error.message.includes('Extension context invalidated') ||
-          error.message.includes('context invalidated') ||
-          error.message.includes('connection closed') ||
-          error.message.includes('message channel closed') ||
-          error.message.includes('message port closed')
+        error.message.includes('Extension context invalidated') ||
+        error.message.includes('context invalidated') ||
+        error.message.includes('connection closed') ||
+        error.message.includes('message channel closed') ||
+        error.message.includes('message port closed')
       )) {
         console.log(`${logPrefix} 弹窗可能已关闭，但任务将继续执行...`);
         return true; // 忽略此类错误
@@ -1591,10 +1704,10 @@ async function unfollowSelectedAccounts(accountsList) {
       return false; // 其他错误仍然需要处理
     };
 
-    return function(message) {
+    return function (message) {
       const logMessage = `${logPrefix} ${message}`;
       console.log(logMessage);
-      
+
       // 保存日志到存储，这样即使弹窗关闭也能保留最新状态
       try {
         chrome.storage.local.get(['unfollowLogs'], (result) => {
@@ -1604,7 +1717,7 @@ async function unfollowSelectedAccounts(accountsList) {
             username: username || 'Global',
             message: message
           });
-          
+
           // 只保留最近的100条日志
           const recentLogs = logs.slice(-100);
           chrome.storage.local.set({ unfollowLogs: recentLogs });
@@ -1629,13 +1742,13 @@ async function unfollowSelectedAccounts(accountsList) {
     fastMode: true,         // 是否启用快速模式
     fastScrollStep: 2.5,    // 快速模式滚动步长倍数
     fastScrollDelay: 400,   // 快速模式滚动等待时间 (ms)
-    
+
     // 超快速模式配置
     ultraFastMode: true,    // 是否启用超快速模式
     ultraScrollStep: 4.0,   // 超快速模式滚动步长倍数
     ultraScrollDelay: 250,  // 超快速滚动等待时间 (ms)
     checkInterval: 3,       // 超快速模式下每隔几次滚动检查一次
-    
+
     // 稳定性和重试配置
     maxUnchangedCount: 8,   // 高度不变次数阈值 (减少等待时间)
     batchSize: 3,           // 每批处理的账号数
@@ -1648,26 +1761,26 @@ async function unfollowSelectedAccounts(accountsList) {
     let scrollCount = 0;
     let lastHeight = document.body.scrollHeight;
     let unchangedHeightCount = 0;
-    
+
     logger('开始超快速滚动...');
-    
+
     while (scrollCount < maxScrolls && unchangedHeightCount < 5 && !shouldStop) {
       scrollCount++;
-      
+
       // 执行滚动
       window.scrollBy(0, distance);
       await delay(config.ultraScrollDelay);
-      
+
       // 检查页面高度是否变化
       const currentHeight = document.body.scrollHeight;
-      
+
       if (currentHeight === lastHeight) {
         unchangedHeightCount++;
       } else {
         unchangedHeightCount = 0;
         lastHeight = currentHeight;
       }
-      
+
       // 每隔特定次数检查一次是否有账号可处理
       if (checkForAccounts && scrollCount % config.checkInterval === 0) {
         logger(`快速滚动 #${scrollCount}, 检查是否有账号...`);
@@ -1678,7 +1791,7 @@ async function unfollowSelectedAccounts(accountsList) {
         }
       }
     }
-    
+
     logger(`超快速滚动完成，执行了 ${scrollCount} 次滚动`);
     return false; // 未找到或处理账号
   }
@@ -1687,22 +1800,22 @@ async function unfollowSelectedAccounts(accountsList) {
   async function findAndUnfollowAccount(account) {
     // 创建账号特定的日志记录器
     const addDebugLog = createDebugLogger(account.username);
-    
+
     // 增强错误处理，防止弹窗关闭导致的通信中断
     const handleRuntimeError = (error) => {
       if (error && error.message && (
-          error.message.includes('Extension context invalidated') ||
-          error.message.includes('context invalidated') ||
-          error.message.includes('connection closed')
+        error.message.includes('Extension context invalidated') ||
+        error.message.includes('context invalidated') ||
+        error.message.includes('connection closed')
       )) {
         addDebugLog('弹窗可能已关闭，但任务将继续执行...');
         return true; // 忽略此类错误
       }
       return false; // 其他错误仍然需要处理
     };
-    
+
     addDebugLog(`尝试取消关注 ${account.displayName} (@${account.username})`);
-    
+
     try {
       // 确保状态更新保存到存储
       try {
@@ -1717,7 +1830,7 @@ async function unfollowSelectedAccounts(accountsList) {
       } catch (error) {
         handleRuntimeError(error);
       }
-      
+
       // 步骤1: 在当前视图中查找特定账号
       let found = await searchCurrentView(account, addDebugLog);
       if (found) return true;
@@ -1733,17 +1846,17 @@ async function unfollowSelectedAccounts(accountsList) {
       // 步骤3: 如果未找到任何账号，使用超快速滚动策略
       if (config.ultraFastMode) {
         addDebugLog('未找到账号，开始超快速滚动搜索...');
-        
+
         // 计算超快速滚动距离
         const scrollDistance = window.innerHeight * config.ultraScrollStep;
-        
+
         // 执行超快速滚动 (最多20次滚动)，并检查账号
         found = await fastScroll(scrollDistance, 20, addDebugLog, true);
         if (found) {
           addDebugLog('在超快速滚动中找到并处理了账号！');
           return true;
         }
-        
+
         // 如果没找到，再执行一次超快速滚动并检查特定账号
         found = await fastScroll(scrollDistance, 20, addDebugLog, true);
         if (found) {
@@ -1751,47 +1864,47 @@ async function unfollowSelectedAccounts(accountsList) {
           return true;
         }
       }
-      
+
       // 步骤4: 如果超快速滚动未找到账号，使用常规滚动搜索
       addDebugLog('开始常规滚动搜索...');
-      
+
       // 向下滚动查找
       let reachedBottom = false;
       let scrollCount = 0;
       let unchangedHeightCount = 0;
       let lastHeight = document.body.scrollHeight;
-      
+
       // 根据是否启用快速模式选择滚动步长和延迟
-      const scrollStep = config.fastMode 
-        ? window.innerHeight * config.fastScrollStep 
+      const scrollStep = config.fastMode
+        ? window.innerHeight * config.fastScrollStep
         : window.innerHeight * config.scrollStep;
-      
+
       const scrollDelay = config.fastMode
         ? config.fastScrollDelay
         : config.scrollDelay;
-        
+
       const maxUnchangedCount = config.maxUnchangedCount;
-      
+
       // 只执行最多10次常规滚动
       while (!reachedBottom && !shouldStop && unchangedHeightCount < maxUnchangedCount && scrollCount < 10) {
         scrollCount++;
-        
+
         try {
           // 快速滚动时，每3次才执行一次账号搜索，节省时间
           const shouldCheckAccounts = scrollCount % 2 === 0;
-          
+
           // 向下滚动
           window.scrollBy(0, scrollStep);
           await delay(scrollDelay);
-          
+
           // 检查页面高度是否变化
           const currentHeight = document.body.scrollHeight;
           addDebugLog(`常规滚动 #${scrollCount}, 当前高度: ${currentHeight}px, 上次高度: ${lastHeight}px`);
-          
+
           if (currentHeight === lastHeight) {
             unchangedHeightCount++;
             addDebugLog(`页面高度未变化 (${unchangedHeightCount}/${maxUnchangedCount})`);
-            
+
             // 尝试不同滚动策略，防止卡住
             if (unchangedHeightCount % 2 === 0) {
               addDebugLog("尝试不同的滚动方式...");
@@ -1802,7 +1915,7 @@ async function unfollowSelectedAccounts(accountsList) {
             unchangedHeightCount = 0;
             lastHeight = currentHeight;
           }
-          
+
           // 只在需要时检查账号，减少不必要的DOM操作
           if (shouldCheckAccounts) {
             // 尝试搜索所有可见的待取消关注账号
@@ -1811,7 +1924,7 @@ async function unfollowSelectedAccounts(accountsList) {
               addDebugLog(`在常规滚动 #${scrollCount} 时找到并取消关注了账号`);
               return true;
             }
-            
+
             // 如果没有找到任何账号，再特定查找当前目标账号
             found = await searchCurrentView(account, addDebugLog);
             if (found) {
@@ -1819,7 +1932,7 @@ async function unfollowSelectedAccounts(accountsList) {
               return true;
             }
           }
-          
+
           // 检查是否已经到达底部 (高度不变或页面底部可见)
           if (unchangedHeightCount >= maxUnchangedCount) {
             addDebugLog(`连续${maxUnchangedCount}次滚动页面高度未变化，认为已到达底部`);
@@ -1833,7 +1946,7 @@ async function unfollowSelectedAccounts(accountsList) {
           }
         }
       }
-      
+
       // 如果到达底部仍未找到
       addDebugLog('已完成所有滚动搜索，未找到要取消关注的账号');
       return false;
@@ -1844,48 +1957,48 @@ async function unfollowSelectedAccounts(accountsList) {
       return false;
     }
   }
-  
+
   // 辅助函数：在当前视图中搜索特定账号
   async function searchCurrentView(account, debugLog) {
     // 使用传入的日志函数或默认全局日志
     const addDebugLog = debugLog || createDebugLogger(account.username);
-    
+
     const cells = document.querySelectorAll('[data-testid="cellInnerDiv"], [data-testid="UserCell"]');
-    
+
     for (const cell of cells) {
       if (findUsernameInCell(cell, account.username)) {
         addDebugLog('找到目标账号');
-        
+
         // 找到关注按钮
         const followButton = findFollowButton(cell);
         if (!followButton) {
           addDebugLog('未找到关注按钮');
           return false;
         }
-        
+
         // 滚动到按钮位置
         await scrollToElement(followButton);
         await delay(config.buttonDelay / 2); // 减少等待时间
-        
+
         // 点击关注按钮
         followButton.click();
         addDebugLog('已点击关注按钮');
         await delay(config.buttonDelay);
-        
+
         // 检查确认对话框并确认
         const confirmButtons = document.querySelectorAll('[data-testid="confirmationSheetConfirm"]');
         if (confirmButtons.length > 0) {
           addDebugLog('找到确认按钮，点击中...');
           confirmButtons[0].click();
           addDebugLog('已确认取消关注');
-          
+
           // 等待确认按钮消失或状态变化
           await delay(config.confirmDelay);
-          
+
           // 更新计数和列表
           unfollowedCount++;
           await removeAccountAndSave(account);
-          
+
           await saveTaskState();
           updateProgress(`已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个...`);
           return true;
@@ -1896,37 +2009,37 @@ async function unfollowSelectedAccounts(accountsList) {
             addDebugLog('找到替代确认按钮，点击中...');
             altConfirmButtons[0].click();
             addDebugLog('已确认取消关注');
-            
+
             // 等待确认按钮消失
             await delay(config.confirmDelay);
-            
+
             // 更新计数和列表
             unfollowedCount++;
             await removeAccountAndSave(account);
-            
+
             await saveTaskState();
             updateProgress(`已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个...`);
             return true;
           }
-          
+
           addDebugLog('未找到确认按钮');
           return false;
         }
       }
     }
-    
+
     return false; // 当前视图中未找到
   }
-  
+
   // 辅助函数：搜索当前视图中所有待取消关注的账号
   async function searchAllVisibleAccounts(debugLog) {
     // 使用传入的日志函数或默认全局日志
     const addDebugLog = debugLog || globalDebugLog;
-    
+
     const cells = document.querySelectorAll('[data-testid="cellInnerDiv"], [data-testid="UserCell"]');
     let foundAny = false;
     let processedCount = 0; // 记录处理的账号数量
-    
+
     // 改进高亮单元格检测逻辑，更加宽松地匹配黄色背景
     const highlightedCells = Array.from(cells).filter(cell => {
       const bgColor = cell.style.backgroundColor;
@@ -1937,62 +2050,62 @@ async function unfollowSelectedAccounts(accountsList) {
         bgColor.includes('rgb(255, 255')   // 任何接近黄色的RGB值
       );
     });
-    
+
     if (highlightedCells.length > 0) {
       addDebugLog(`找到 ${highlightedCells.length} 个高亮显示的单元格，尝试取消关注所有符合条件的账号...`);
-      
+
       // 处理所有高亮单元格
       for (const cell of highlightedCells) {
         if (shouldStop) break;
-        
+
         // 提取用户名
         const cellUsername = getUsernameFromCell(cell);
         if (!cellUsername) {
           addDebugLog('无法从高亮单元格提取用户名，跳过');
           continue;
         }
-        
+
         // 确认在待取消关注列表中
         const targetAccount = remainingAccounts.find(acc => acc.username === cellUsername);
         if (!targetAccount) {
           addDebugLog(`高亮的账号 @${cellUsername} 不在待取消关注列表中，可能已处理，跳过`);
           continue;
         }
-        
+
         // 为当前处理的账号创建一个特定的日志记录器
         const accountLog = createDebugLogger(cellUsername);
         accountLog(`尝试取消关注高亮账号 @${cellUsername}`);
-        
+
         // 找到关注按钮
         const followButton = findFollowButton(cell);
         if (!followButton) {
           accountLog(`未在高亮单元格中找到关注按钮，跳过 @${cellUsername}`);
           continue;
         }
-        
+
         // 滚动到按钮位置
         await scrollToElement(followButton);
         await delay(config.buttonDelay / 2); // 减少等待时间
-        
+
         // 点击关注按钮
         followButton.click();
         accountLog('已点击关注按钮');
         await delay(config.buttonDelay);
-        
+
         // 检查确认对话框并确认
         const confirmButtons = document.querySelectorAll('[data-testid="confirmationSheetConfirm"]');
         if (confirmButtons.length > 0) {
           accountLog('找到确认按钮，点击中...');
           confirmButtons[0].click();
           accountLog(`已确认取消关注 @${cellUsername}`);
-          
+
           // 等待确认按钮消失
           await delay(config.confirmDelay);
-          
+
           // 更新计数和列表
           unfollowedCount++;
           await removeAccountAndSave(targetAccount);
-          
+
           await saveTaskState();
           updateProgress(`已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个...`);
           foundAny = true;
@@ -2005,33 +2118,33 @@ async function unfollowSelectedAccounts(accountsList) {
             accountLog('找到替代确认按钮，点击中...');
             altConfirmButtons[0].click();
             accountLog(`已确认取消关注 @${cellUsername}`);
-            
+
             // 等待确认按钮消失
             await delay(config.confirmDelay);
-            
+
             // 更新计数和列表
             unfollowedCount++;
             await removeAccountAndSave(targetAccount);
-            
+
             await saveTaskState();
             updateProgress(`已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个...`);
             foundAny = true;
             processedCount++;
             // 继续处理下一个账号
           }
-          
+
           accountLog('未找到确认按钮，跳过此账号');
         }
       }
     }
-    
+
     // 处理完所有高亮账号后，再处理非高亮账号
     // 移除这个条件判断，无论是否找到高亮账号都处理非高亮账号
     // if (!foundAny) {
-    
+
     // 基于用户名查找待取消关注的账号
     addDebugLog('开始基于用户名查找待取消关注的账号...');
-    
+
     // 创建一个已处理用户名的集合，避免重复处理
     const processedUsernames = new Set();
     // 将已处理过的高亮账号添加到集合中
@@ -2039,55 +2152,55 @@ async function unfollowSelectedAccounts(accountsList) {
       const username = getUsernameFromCell(cell);
       if (username) processedUsernames.add(username);
     });
-    
+
     // 遍历所有单元格，检查是否有待取消关注的账号
     for (const cell of cells) {
       if (shouldStop) break;
-      
+
       const cellUsername = getUsernameFromCell(cell);
       if (!cellUsername || processedUsernames.has(cellUsername)) continue; // 跳过已处理的账号
-      
+
       // 添加到已处理集合
       processedUsernames.add(cellUsername);
-      
+
       // 检查是否在待处理列表中
       const targetAccount = remainingAccounts.find(acc => acc.username === cellUsername);
       if (!targetAccount) continue;
-      
+
       // 为当前处理的账号创建一个特定的日志记录器
       const accountLog = createDebugLogger(cellUsername);
       accountLog(`找到待取消关注账号: @${cellUsername}`);
-      
+
       // 找到关注按钮
       const followButton = findFollowButton(cell);
       if (!followButton) {
         accountLog('未找到关注按钮');
         continue;
       }
-      
+
       // 滚动到按钮位置
       await scrollToElement(followButton);
       await delay(config.buttonDelay / 2); // 减少等待时间
-      
+
       // 点击关注按钮
       followButton.click();
       accountLog('已点击关注按钮');
       await delay(config.buttonDelay);
-      
+
       // 检查确认对话框并确认
       const confirmButtons = document.querySelectorAll('[data-testid="confirmationSheetConfirm"]');
       if (confirmButtons.length > 0) {
         accountLog('找到确认按钮，点击中...');
         confirmButtons[0].click();
         accountLog(`已确认取消关注 @${cellUsername}`);
-        
+
         // 等待确认按钮消失
         await delay(config.confirmDelay);
-        
+
         // 更新计数和列表
         unfollowedCount++;
         await removeAccountAndSave(targetAccount);
-        
+
         await saveTaskState();
         updateProgress(`已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个...`);
         processedCount++;
@@ -2100,33 +2213,33 @@ async function unfollowSelectedAccounts(accountsList) {
           accountLog('找到替代确认按钮，点击中...');
           altConfirmButtons[0].click();
           accountLog(`已确认取消关注 @${cellUsername}`);
-          
+
           // 等待确认按钮消失
           await delay(config.confirmDelay);
-          
+
           // 更新计数和列表
           unfollowedCount++;
           await removeAccountAndSave(targetAccount);
-          
+
           await saveTaskState();
           updateProgress(`已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个...`);
           processedCount++;
           foundAny = true;
           // 继续处理下一个账号
         }
-        
+
         accountLog('未找到确认按钮');
       }
     }
     // }
-    
+
     // 返回是否找到并处理了任何账号
     if (processedCount > 0) {
       addDebugLog(`本次成功处理了 ${processedCount} 个账号`);
     }
     return foundAny;
   }
-  
+
   // 找到单元格中的用户名
   function findUsernameInCell(cell, username) {
     try {
@@ -2138,7 +2251,7 @@ async function unfollowSelectedAccounts(accountsList) {
           return true;
         }
       }
-      
+
       // 方法2: 检查用户名文本
       const usernameElements = cell.querySelectorAll('div[dir="ltr"] span');
       for (const element of usernameElements) {
@@ -2147,14 +2260,14 @@ async function unfollowSelectedAccounts(accountsList) {
           return true;
         }
       }
-      
+
       return false;
     } catch (error) {
       console.log(`查找用户名时出错: ${error.message}`);
       return false;
     }
   }
-  
+
   // 找到关注按钮
   function findFollowButton(cell) {
     try {
@@ -2162,12 +2275,12 @@ async function unfollowSelectedAccounts(accountsList) {
       const buttons = cell.querySelectorAll('[role="button"]');
       for (const button of buttons) {
         const ariaLabel = button.getAttribute('aria-label');
-        if (ariaLabel && (ariaLabel.includes('Following') || ariaLabel.includes('已关注') || 
-                          ariaLabel.includes('正在关注'))) {
+        if (ariaLabel && (ariaLabel.includes('Following') || ariaLabel.includes('已关注') ||
+          ariaLabel.includes('正在关注'))) {
           return button;
         }
       }
-      
+
       // 方法2: 检查按钮文本
       const allButtons = cell.querySelectorAll('div[role="button"], button');
       for (const button of allButtons) {
@@ -2176,7 +2289,7 @@ async function unfollowSelectedAccounts(accountsList) {
           return button;
         }
       }
-      
+
       return null;
     } catch (error) {
       console.log(`查找关注按钮时出错: ${error.message}`);
@@ -2188,16 +2301,16 @@ async function unfollowSelectedAccounts(accountsList) {
   async function main() {
     // 使用全局日志记录器
     const mainLogger = createDebugLogger('Main');
-    
+
     try {
       // 设置一个心跳机制，防止任务被挂起
       let heartbeatInterval = null;
       const startHeartbeat = () => {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
-        
+
         heartbeatInterval = setInterval(() => {
           try {
-            chrome.storage.local.set({ 
+            chrome.storage.local.set({
               lastHeartbeat: Date.now(),
               remainingAccountsCount: remainingAccounts.length,
               unfollowedCount: unfollowedCount
@@ -2207,27 +2320,27 @@ async function unfollowSelectedAccounts(accountsList) {
           }
         }, 10000); // 每10秒更新一次心跳
       };
-      
+
       // 启动心跳
       startHeartbeat();
-      
+
       // 添加弹性错误处理，防止弹窗关闭导致的通信中断
       const handleRuntimeError = (error) => {
         if (error && error.message && (
-            error.message.includes('Extension context invalidated') ||
-            error.message.includes('context invalidated') ||
-            error.message.includes('connection closed') ||
-            error.message.includes('message channel closed') ||
-            error.message.includes('message port closed') ||
-            error.message.includes('Could not establish connection') ||
-            error.message.includes('Receiving end does not exist')
+          error.message.includes('Extension context invalidated') ||
+          error.message.includes('context invalidated') ||
+          error.message.includes('connection closed') ||
+          error.message.includes('message channel closed') ||
+          error.message.includes('message port closed') ||
+          error.message.includes('Could not establish connection') ||
+          error.message.includes('Receiving end does not exist')
         )) {
           mainLogger('扩展窗口可能已关闭，但任务将继续执行...');
           return true; // 忽略此类错误
         }
         return false; // 其他错误仍然需要处理
       };
-      
+
       // 增强版进度更新函数，提高弹性
       const safeUpdateProgress = (status, completed = false, rateLimited = false) => {
         try {
@@ -2248,22 +2361,22 @@ async function unfollowSelectedAccounts(accountsList) {
           mainLogger('保存进度到存储失败：' + error.message);
         }
       };
-      
+
       // 临时替换标准updateProgress函数
       const originalUpdateProgress = updateProgress;
       updateProgress = safeUpdateProgress;
-      
+
       // 恢复之前的任务状态（如果有）
       const hasExistingTask = await loadSavedTask();
-      
+
       // 日志任务状态
       mainLogger('当前任务状态: ' + (hasExistingTask ? '已有保存的任务' : '新任务'));
       mainLogger('待处理账号数量: ' + remainingAccounts.length);
-      
+
       // 只有在没有恢复任务的情况下才显示确认对话框
       if (!hasExistingTask) {
         mainLogger('准备显示确认对话框...');
-        
+
         // 验证当前页面
         if (!isValidPage()) {
           const message = '请导航到Twitter/X个人资料或关注页面再试。';
@@ -2286,7 +2399,7 @@ async function unfollowSelectedAccounts(accountsList) {
 
         // 显示确认对话框
         mainLogger('显示确认对话框...');
-        
+
         let confirmed = false;
         try {
           confirmed = await showConfirmationDialog();
@@ -2303,14 +2416,14 @@ async function unfollowSelectedAccounts(accountsList) {
               resolve(false);
             }
           });
-          
+
           if (taskStarted) {
             confirmed = true;
           }
         }
-        
+
         mainLogger('确认对话框结果: ' + (confirmed ? '用户确认' : '用户取消'));
-        
+
         if (!confirmed) {
           try {
             // 确保任务被标记为已完成
@@ -2326,7 +2439,7 @@ async function unfollowSelectedAccounts(accountsList) {
 
       // 既然任务已确认，记录开始时间
       try {
-        chrome.storage.local.set({ 
+        chrome.storage.local.set({
           taskStartTime: Date.now(),
           isRunning: true
         });
@@ -2335,40 +2448,40 @@ async function unfollowSelectedAccounts(accountsList) {
       }
 
       safeUpdateProgress(`准备取消关注 ${remainingAccounts.length} 个账号...`);
-      
+
       // 初始化超速处理计数
       let emptyBatchCount = 0;
       let noProgressCount = 0;
       let lastUnfollowedCount = unfollowedCount;
-      
+
       // 优先使用超快速模式先扫描大部分页面
       if (config.ultraFastMode && remainingAccounts.length > 10) {
         mainLogger('使用超快速预扫描模式...');
-        
+
         // 初始超快速扫描，查找所有可见的待取消关注账号
         let initialFound = await searchAllVisibleAccounts(mainLogger);
         if (initialFound) {
           mainLogger('在当前视图找到并处理了账号');
         }
-        
+
         // 尝试超快速滚动多次，以覆盖更多页面
         for (let i = 0; i < 3 && !shouldStop; i++) {
-          mainLogger(`执行第 ${i+1}/3 轮超快速预扫描...`);
-          
+          mainLogger(`执行第 ${i + 1}/3 轮超快速预扫描...`);
+
           const scrollDistance = window.innerHeight * config.ultraScrollStep;
           await fastScroll(scrollDistance, 30, mainLogger, true);
-          
+
           // 如果处理了足够多的账号，或者已经在底部了，可以提前退出
           if (unfollowedCount - lastUnfollowedCount > 5) {
             mainLogger(`已在超快速扫描中取消关注 ${unfollowedCount - lastUnfollowedCount} 个账号，继续常规处理`);
             break;
           }
         }
-        
+
         // 更新状态
         lastUnfollowedCount = unfollowedCount;
       }
-      
+
       // 创建账号处理批次
       while (remainingAccounts.length > 0 && !shouldStop) {
         // 处理频率限制
@@ -2376,14 +2489,14 @@ async function unfollowSelectedAccounts(accountsList) {
           await handleRateLimit();
           continue;
         }
-        
+
         // 获取当前批次的账号 (超快速模式使用更大批次)
         const batchSize = config.ultraFastMode ? config.batchSize * 2 : config.batchSize;
         const currentBatch = remainingAccounts.slice(0, batchSize);
-        
+
         mainLogger(`开始处理一批 ${currentBatch.length} 个账号...`);
         let batchSuccess = false;
-        
+
         // 先尝试在当前视图查找并处理任何可见的账号
         let found = await searchAllVisibleAccounts(mainLogger);
         if (found) {
@@ -2393,17 +2506,17 @@ async function unfollowSelectedAccounts(accountsList) {
           // 继续处理下一批，不需要单独处理每个账号
           continue;
         }
-        
+
         // 处理当前批次中的账号
         let batchProcessed = 0;
         // 如果当前视图没有可处理的账号，则尝试找具体的账号
         for (const account of currentBatch) {
           if (shouldStop) break;
-          
+
           const accountLogger = createDebugLogger(account.username);
           let success = false;
           let retryCount = 0;
-          
+
           // 尝试最多2次查找该账号 (超快速模式只尝试1次)
           const maxRetries = config.ultraFastMode ? 1 : 2;
           while (retryCount < maxRetries && !success && !shouldStop) {
@@ -2417,7 +2530,7 @@ async function unfollowSelectedAccounts(accountsList) {
               } else {
                 retryCount++;
                 if (retryCount < maxRetries) {
-                  accountLogger(`尝试第 ${retryCount+1}/${maxRetries} 次查找账号 @${account.username}...`);
+                  accountLogger(`尝试第 ${retryCount + 1}/${maxRetries} 次查找账号 @${account.username}...`);
                   await delay(800); // 短暂延迟后重试
                 }
               }
@@ -2431,21 +2544,21 @@ async function unfollowSelectedAccounts(accountsList) {
               }
             }
           }
-          
+
           // 如果经过尝试仍未找到，则从列表中移除
           if (!success) {
             accountLogger(`无法找到账号 @${account.username}，跳过但保留在待处理列表中`);
             // 注释掉下面这行，以保留账号在待处理列表中
             // await removeAccountAndSave(account);
-            
+
             // 将账号移动到列表末尾重新排队，而不是完全移除
             remainingAccounts = remainingAccounts.filter(a => a.username !== account.username);
             remainingAccounts.push(account);
-            
+
             // 保存更新后的状态
             await saveTaskState();
           }
-          
+
           // 超快速模式下，每处理3个账号进行一次超快速滚动
           if (config.ultraFastMode && batchProcessed > 0 && batchProcessed % 3 === 0) {
             accountLogger('已处理3个账号，执行一次快速滚动...');
@@ -2453,7 +2566,7 @@ async function unfollowSelectedAccounts(accountsList) {
             await delay(400);
           }
         }
-        
+
         // 检查是否有新的取消关注
         const newUnfollows = unfollowedCount - lastUnfollowedCount;
         if (newUnfollows > 0) {
@@ -2464,7 +2577,7 @@ async function unfollowSelectedAccounts(accountsList) {
           noProgressCount++;
           mainLogger(`本批次未取消关注任何账号 (${noProgressCount}/3)`);
         }
-        
+
         // 如果此批次有成功处理的账号，批次之间只需短暂延迟
         if (batchSuccess) {
           emptyBatchCount = 0;
@@ -2473,19 +2586,19 @@ async function unfollowSelectedAccounts(accountsList) {
           // 如果连续三批未处理任何账号，可能需要进行更激进的滚动
           emptyBatchCount++;
           mainLogger(`当前区域未找到任何可处理的账号 (${emptyBatchCount}/3)...`);
-          
+
           if (emptyBatchCount >= 3 || noProgressCount >= 3) {
             // 重置计数器
             emptyBatchCount = 0;
             noProgressCount = 0;
-            
+
             // 执行极端滚动，尝试找到新的账号区域
             mainLogger('多次未找到账号，执行超长距离滚动...');
-            
+
             // 使用超快速滚动跳过大段内容
             const longDistance = window.innerHeight * 6;
             await fastScroll(longDistance, 15, mainLogger, true);
-            
+
             // 滚动到新区域后，立即搜索一次
             await searchAllVisibleAccounts(mainLogger);
           } else {
@@ -2496,12 +2609,12 @@ async function unfollowSelectedAccounts(accountsList) {
           }
         }
       }
-      
+
       // 完成了所有账号的处理
       if (remainingAccounts.length === 0) {
         const finalMessage = `完成！成功取消关注 ${unfollowedCount} 个账号。`;
         mainLogger(finalMessage);
-        
+
         // 只清理本地存储，不再发送可能失败的消息
         try {
           // 更新存储状态，将isRunning设置为false并保存最终进度
@@ -2515,13 +2628,13 @@ async function unfollowSelectedAccounts(accountsList) {
               completed: true
             }
           });
-          
+
           // 清理任务状态
           chrome.storage.local.remove(['unfollowTask']);
         } catch (error) {
           mainLogger('清理存储时出错，可能是扩展上下文已失效');
         }
-        
+
         // 本地显示完成通知而不依赖于popup
         showCompletionNotification();
       } else {
@@ -2541,10 +2654,10 @@ async function unfollowSelectedAccounts(accountsList) {
         }
         safeUpdateProgress(`暂停：已取消关注 ${unfollowedCount} 个账号，还剩 ${remainingAccounts.length} 个`, false);
       }
-      
+
       // 清理心跳
       if (heartbeatInterval) clearInterval(heartbeatInterval);
-      
+
       // 恢复原始的updateProgress函数
       updateProgress = originalUpdateProgress;
     } catch (error) {
@@ -2568,7 +2681,7 @@ async function unfollowSelectedAccounts(accountsList) {
       } catch (e) {
         // 忽略存储错误
       }
-      
+
       // 显示本地通知
       try {
         const errorNotification = document.createElement('div');
@@ -2587,7 +2700,7 @@ async function unfollowSelectedAccounts(accountsList) {
         `;
         errorNotification.textContent = `错误: ${error.message}。任务已暂停，可重新启动。`;
         document.body.appendChild(errorNotification);
-        
+
         setTimeout(() => {
           if (document.body.contains(errorNotification)) {
             document.body.removeChild(errorNotification);
@@ -2607,236 +2720,236 @@ async function unfollowSelectedAccounts(accountsList) {
 
 // 从单元格提取用户名 (复用/修改自 extractAccountInfo)
 function getUsernameFromCell(cell) {
-    if (!cell || typeof cell.querySelector !== 'function') return null;
-    try {
-        // 优先尝试从 aria-label 提取 (通常在按钮上)
-        const buttonWithLabel = cell.querySelector('button[aria-label*="@"]');
-        if (buttonWithLabel) {
-            const ariaLabel = buttonWithLabel.getAttribute('aria-label');
-            const match = ariaLabel.match(/@([a-zA-Z0-9_]+)/);
-            if (match && match[1]) return match[1];
-        }
-
-        // 尝试查找用户名链接
-        const usernameLink = cell.querySelector('a[href^="/"][role="link"]');
-        if (usernameLink) {
-            const href = usernameLink.getAttribute('href');
-            const parts = href.split('/').filter(Boolean);
-            if (parts.length > 0 && /^[a-zA-Z0-9_]+$/.test(parts[0])) {
-                return parts[0];
-            }
-        }
-
-        // 尝试查找包含@的span
-        const spans = cell.querySelectorAll('span');
-        for (const span of spans) {
-            const text = span.textContent.trim();
-            if (text.startsWith('@')) {
-                const potentialUsername = text.substring(1);
-                if (/^[a-zA-Z0-9_]+$/.test(potentialUsername)) {
-                     return potentialUsername;
-                }
-            }
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('Error extracting username from cell:', error);
-        return null;
+  if (!cell || typeof cell.querySelector !== 'function') return null;
+  try {
+    // 优先尝试从 aria-label 提取 (通常在按钮上)
+    const buttonWithLabel = cell.querySelector('button[aria-label*="@"]');
+    if (buttonWithLabel) {
+      const ariaLabel = buttonWithLabel.getAttribute('aria-label');
+      const match = ariaLabel.match(/@([a-zA-Z0-9_]+)/);
+      if (match && match[1]) return match[1];
     }
+
+    // 尝试查找用户名链接
+    const usernameLink = cell.querySelector('a[href^="/"][role="link"]');
+    if (usernameLink) {
+      const href = usernameLink.getAttribute('href');
+      const parts = href.split('/').filter(Boolean);
+      if (parts.length > 0 && /^[a-zA-Z0-9_]+$/.test(parts[0])) {
+        return parts[0];
+      }
+    }
+
+    // 尝试查找包含@的span
+    const spans = cell.querySelectorAll('span');
+    for (const span of spans) {
+      const text = span.textContent.trim();
+      if (text.startsWith('@')) {
+        const potentialUsername = text.substring(1);
+        if (/^[a-zA-Z0-9_]+$/.test(potentialUsername)) {
+          return potentialUsername;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error extracting username from cell:', error);
+    return null;
+  }
 }
 
 // 应用或移除高亮
 function applyHighlight(element) {
-    if (!element || !window.tfHighlightUsernames) return;
-    const username = getUsernameFromCell(element);
-    
-    if (username && window.tfHighlightUsernames.has(username)) {
-        // console.log('Applying highlight to:', username);
-        element.style.backgroundColor = highlightColor;
-    } else {
-        // console.log('Removing highlight from:', username || 'element');
-        element.style.backgroundColor = ''; // 移除背景色
-    }
+  if (!element || !window.tfHighlightUsernames) return;
+  const username = getUsernameFromCell(element);
+
+  if (username && window.tfHighlightUsernames.has(username)) {
+    // console.log('Applying highlight to:', username);
+    element.style.backgroundColor = highlightColor;
+  } else {
+    // console.log('Removing highlight from:', username || 'element');
+    element.style.backgroundColor = ''; // 移除背景色
+  }
 }
 
 // 初始化观察器并开始高亮
 function initializeHighlighting(usernamesToHighlight) {
-    console.log('Initializing highlighting for', usernamesToHighlight.size, 'users.');
-    stopHighlighting(); // 先确保停止旧的观察器
+  console.log('Initializing highlighting for', usernamesToHighlight.size, 'users.');
+  stopHighlighting(); // 先确保停止旧的观察器
 
-    window.tfHighlightUsernames = usernamesToHighlight;
-    if (window.tfHighlightUsernames.size === 0) {
-        console.log('No users to highlight.');
-        return; // 没有需要高亮的用户
-    }
+  window.tfHighlightUsernames = usernamesToHighlight;
+  if (window.tfHighlightUsernames.size === 0) {
+    console.log('No users to highlight.');
+    return; // 没有需要高亮的用户
+  }
 
-    // --- Intersection Observer --- 
-    window.tfIntersectionObserver = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                // console.log('Element intersecting:', getUsernameFromCell(entry.target));
-                applyHighlight(entry.target);
-            } else {
-                // 可选：离开视口时移除高亮（如果性能需要）
-                // entry.target.style.backgroundColor = ''; 
+  // --- Intersection Observer ---
+  window.tfIntersectionObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        // console.log('Element intersecting:', getUsernameFromCell(entry.target));
+        applyHighlight(entry.target);
+      } else {
+        // 可选：离开视口时移除高亮（如果性能需要）
+        // entry.target.style.backgroundColor = '';
+      }
+    });
+  }, {
+    root: null, // 使用视口作为根
+    threshold: 0.1 // 元素可见10%时触发
+  });
+
+  // --- Mutation Observer ---
+  const targetNode = document.querySelector(timelineSelector) || document.body;
+  if (!targetNode) {
+    console.error('Cannot find target node for MutationObserver');
+    return;
+  }
+
+  window.tfMutationObserver = new MutationObserver((mutationsList, observer) => {
+    for (const mutation of mutationsList) {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            // 检查添加的节点本身是否是账号单元格
+            if (node.matches && node.matches(accountCellSelector)) {
+              // console.log('New account cell added:', getUsernameFromCell(node));
+              window.tfIntersectionObserver.observe(node);
+              applyHighlight(node); // 立即尝试高亮
             }
+            // 检查添加的节点的子元素是否包含账号单元格
+            const nestedCells = node.querySelectorAll ? node.querySelectorAll(accountCellSelector) : [];
+            nestedCells.forEach(cell => {
+              // console.log('New nested account cell found:', getUsernameFromCell(cell));
+              window.tfIntersectionObserver.observe(cell);
+              applyHighlight(cell); // 立即尝试高亮
+            });
+          }
         });
-    }, {
-        root: null, // 使用视口作为根
-        threshold: 0.1 // 元素可见10%时触发
-    });
-
-    // --- Mutation Observer --- 
-    const targetNode = document.querySelector(timelineSelector) || document.body;
-    if (!targetNode) {
-        console.error('Cannot find target node for MutationObserver');
-        return;
-    }
-    
-    window.tfMutationObserver = new MutationObserver((mutationsList, observer) => {
-        for (const mutation of mutationsList) {
-            if (mutation.type === 'childList') {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                         // 检查添加的节点本身是否是账号单元格
-                        if (node.matches && node.matches(accountCellSelector)) {
-                             // console.log('New account cell added:', getUsernameFromCell(node));
-                             window.tfIntersectionObserver.observe(node);
-                             applyHighlight(node); // 立即尝试高亮
-                        }
-                        // 检查添加的节点的子元素是否包含账号单元格
-                        const nestedCells = node.querySelectorAll ? node.querySelectorAll(accountCellSelector) : [];
-                        nestedCells.forEach(cell => {
-                            // console.log('New nested account cell found:', getUsernameFromCell(cell));
-                            window.tfIntersectionObserver.observe(cell);
-                            applyHighlight(cell); // 立即尝试高亮
-                        });
-                    }
-                });
-                // 可选：处理 removedNodes 以停止观察，提高性能
-                mutation.removedNodes.forEach(node => {
-                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        if (node.matches && node.matches(accountCellSelector)) {
-                            window.tfIntersectionObserver.unobserve(node);
-                        }
-                        const nestedCells = node.querySelectorAll ? node.querySelectorAll(accountCellSelector) : [];
-                        nestedCells.forEach(cell => window.tfIntersectionObserver.unobserve(cell));
-                    }
-                });
+        // 可选：处理 removedNodes 以停止观察，提高性能
+        mutation.removedNodes.forEach(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.matches && node.matches(accountCellSelector)) {
+              window.tfIntersectionObserver.unobserve(node);
             }
-        }
-    });
+            const nestedCells = node.querySelectorAll ? node.querySelectorAll(accountCellSelector) : [];
+            nestedCells.forEach(cell => window.tfIntersectionObserver.unobserve(cell));
+          }
+        });
+      }
+    }
+  });
 
-    // 开始观察现有元素
-    document.querySelectorAll(accountCellSelector).forEach(cell => {
-        window.tfIntersectionObserver.observe(cell);
-        applyHighlight(cell); // 对已存在的元素立即应用一次
-    });
+  // 开始观察现有元素
+  document.querySelectorAll(accountCellSelector).forEach(cell => {
+    window.tfIntersectionObserver.observe(cell);
+    applyHighlight(cell); // 对已存在的元素立即应用一次
+  });
 
-    // 开始观察DOM变化
-    window.tfMutationObserver.observe(targetNode, { childList: true, subtree: true });
-    console.log('Highlighting observers started.');
+  // 开始观察DOM变化
+  window.tfMutationObserver.observe(targetNode, { childList: true, subtree: true });
+  console.log('Highlighting observers started.');
 }
 
 // 停止观察并清理高亮
 function stopHighlighting() {
-    console.log('Stopping highlighting observers...');
-    if (window.tfIntersectionObserver) {
-        window.tfIntersectionObserver.disconnect();
-        window.tfIntersectionObserver = null;
+  console.log('Stopping highlighting observers...');
+  if (window.tfIntersectionObserver) {
+    window.tfIntersectionObserver.disconnect();
+    window.tfIntersectionObserver = null;
+  }
+  if (window.tfMutationObserver) {
+    window.tfMutationObserver.disconnect();
+    window.tfMutationObserver = null;
+  }
+  // 清理所有可能的背景色
+  document.querySelectorAll(accountCellSelector).forEach(cell => {
+    if (cell.style.backgroundColor === highlightColor) {
+      cell.style.backgroundColor = '';
     }
-    if (window.tfMutationObserver) {
-        window.tfMutationObserver.disconnect();
-        window.tfMutationObserver = null;
-    }
-    // 清理所有可能的背景色
-    document.querySelectorAll(accountCellSelector).forEach(cell => {
-        if (cell.style.backgroundColor === highlightColor) {
-             cell.style.backgroundColor = '';
-        }
-    });
-    window.tfHighlightUsernames = new Set(); // 清空列表
-     console.log('Highlighting observers stopped and highlights cleared.');
+  });
+  window.tfHighlightUsernames = new Set(); // 清空列表
+  console.log('Highlighting observers stopped and highlights cleared.');
 }
 
 // 设置持久化高亮的主函数
 async function setupPersistentHighlighting() {
-    console.log('Setting up persistent highlighting...');
-    try {
-        const data = await new Promise((resolve, reject) => {
-            chrome.storage.local.get(['previewAccounts', 'keepList'], (result) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve(result);
-                }
-            });
-        });
-
-        const previewAccounts = data.previewAccounts || [];
-        const keepList = new Set(data.keepList || []);
-        
-        if (previewAccounts.length === 0) {
-            console.log('No preview accounts found in storage. Stopping highlighting.');
-            stopHighlighting();
-            return;
+  console.log('Setting up persistent highlighting...');
+  try {
+    const data = await new Promise((resolve, reject) => {
+      chrome.storage.local.get(['previewAccounts', 'keepList'], (result) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(result);
         }
+      });
+    });
 
-        const usernamesToHighlight = new Set();
-        previewAccounts.forEach(account => {
-            if (account && account.username && !keepList.has(account.username)) {
-                usernamesToHighlight.add(account.username);
-            }
-        });
+    const previewAccounts = data.previewAccounts || [];
+    const keepList = new Set(data.keepList || []);
 
-        initializeHighlighting(usernamesToHighlight);
-
-    } catch (error) {
-        console.error('Error setting up persistent highlighting:', error);
-        stopHighlighting(); // 出错时也清理
+    if (previewAccounts.length === 0) {
+      console.log('No preview accounts found in storage. Stopping highlighting.');
+      stopHighlighting();
+      return;
     }
+
+    const usernamesToHighlight = new Set();
+    previewAccounts.forEach(account => {
+      if (account && account.username && !keepList.has(account.username)) {
+        usernamesToHighlight.add(account.username);
+      }
+    });
+
+    initializeHighlighting(usernamesToHighlight);
+
+  } catch (error) {
+    console.error('Error setting up persistent highlighting:', error);
+    stopHighlighting(); // 出错时也清理
+  }
 }
 
 // --- 监听来自 Popup 的消息 ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    try {
-        if (message.action === 'startHighlighting') {
-            console.log('Received startHighlighting message');
-            setupPersistentHighlighting();
-            sendResponse({ status: "Highlighting started" });
-        } else if (message.action === 'stopHighlighting') {
-            console.log('Received stopHighlighting message');
-            stopHighlighting();
-            sendResponse({ status: "Highlighting stopped" });
-        } else if (message.action === 'stop') {
-            console.log('Received stop task message');
-            shouldStop = true;
-            // 不再调用 stopHighlighting(); // 保持高亮显示
-            sendResponse({ status: 'stopped' });
-        }
-    } catch (error) {
-        console.error('处理高亮消息时出错:', error);
-        try {
-            sendResponse({ status: 'error', message: error.message });
-        } catch (e) {
-            // 忽略二次错误
-        }
+  try {
+    if (message.action === 'startHighlighting') {
+      console.log('Received startHighlighting message');
+      setupPersistentHighlighting();
+      sendResponse({ status: "Highlighting started" });
+    } else if (message.action === 'stopHighlighting') {
+      console.log('Received stopHighlighting message');
+      stopHighlighting();
+      sendResponse({ status: "Highlighting stopped" });
+    } else if (message.action === 'stop') {
+      console.log('Received stop task message');
+      shouldStop = true;
+      // 不再调用 stopHighlighting(); // 保持高亮显示
+      sendResponse({ status: 'stopped' });
     }
-    // 不返回 true，避免异步响应错误
+  } catch (error) {
+    console.error('处理高亮消息时出错:', error);
+    try {
+      sendResponse({ status: 'error', message: error.message });
+    } catch (e) {
+      // 忽略二次错误
+    }
+  }
+  // 不返回 true，避免异步响应错误
 });
 
 // --- 脚本加载时自动检查是否需要高亮 ---
 try {
-    chrome.storage.local.get(['isRunning', 'previewAccounts'], (result) => {
-        if (!chrome.runtime.lastError && result.previewAccounts && result.previewAccounts.length > 0) {
-             console.log('Detected existing preview accounts. Auto-starting highlighting.');
-             setupPersistentHighlighting();
-        }
-        // 移除了在任务运行时停止高亮的逻辑
-    });
+  chrome.storage.local.get(['isRunning', 'previewAccounts'], (result) => {
+    if (!chrome.runtime.lastError && result.previewAccounts && result.previewAccounts.length > 0) {
+      console.log('Detected existing preview accounts. Auto-starting highlighting.');
+      setupPersistentHighlighting();
+    }
+    // 移除了在任务运行时停止高亮的逻辑
+  });
 } catch (error) {
-    console.error("Error during initial highlighting check:", error);
+  console.error("Error during initial highlighting check:", error);
 }
 
 // --- 结束新增代码 ---

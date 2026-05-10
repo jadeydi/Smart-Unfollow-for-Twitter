@@ -12,7 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const accountsListContainer = document.getElementById('accountsListContainer');
   const accountsList = document.getElementById('accountsList');
   const confirmUnfollowBtn = document.getElementById('confirmUnfollowBtn');
-  const scrollToBottomLink = document.getElementById('scrollToBottomLink');
+  const scanDirectionControl = document.getElementById('scanDirectionControl');
+  const dirBottom = document.getElementById('dir-bottom');
+  const dirTop = document.getElementById('dir-top');
+  let currentScanDirection = 'bottom';
   const selectAllKeep = document.getElementById('selectAllKeep');
   const deselectAllKeep = document.getElementById('deselectAllKeep');
   
@@ -537,6 +540,38 @@ document.addEventListener('DOMContentLoaded', () => {
       // Immediate first sync
       syncProgress();
     } else {
+      // 加载扫描方向设置
+      chrome.storage.local.get(['scanDirection'], (result) => {
+        if (result.scanDirection) {
+          currentScanDirection = result.scanDirection;
+          updateScanDirectionUI(currentScanDirection);
+        }
+      });
+
+      // 切换扫描方向的UI更新函数
+      function updateScanDirectionUI(direction) {
+        if (direction === 'bottom') {
+          dirBottom.classList.add('active');
+          dirTop.classList.remove('active');
+        } else {
+          dirBottom.classList.remove('active');
+          dirTop.classList.add('active');
+        }
+      }
+
+      // 为分段控制按钮添加点击事件
+      dirBottom.addEventListener('click', () => {
+        currentScanDirection = 'bottom';
+        updateScanDirectionUI('bottom');
+        chrome.storage.local.set({ scanDirection: 'bottom' });
+      });
+
+      dirTop.addEventListener('click', () => {
+        currentScanDirection = 'top';
+        updateScanDirectionUI('top');
+        chrome.storage.local.set({ scanDirection: 'top' });
+      });
+
       // 如果没有正在运行的取消关注流程，调用新的初始化函数
       // 使用setTimeout确保DOM已完全加载
       setTimeout(initializeDataLoading, 100);
@@ -674,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 执行获取列表函数，传入保留列表
         const results = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: (keepListArray) => {
+          func: (keepListArray, direction) => {
             if (typeof getFollowingList === 'function') {
               // 捕获执行过程中的日志
               const originalConsoleLog = console.log;
@@ -690,8 +725,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 将数组转换为Set以便快速查找
                 const keepSet = new Set(keepListArray);
                 
-                // 调用获取列表函数，多找一些账号以应对保留账号的情况
-                const promise = getFollowingList(targetUnkeptAccounts, keepSet); 
+                // 调用获取列表函数，传入保留列表和扫描方向
+                const promise = getFollowingList(targetUnkeptAccounts, keepSet, direction); 
                 return promise.then(result => {
                   console.log = originalConsoleLog;
                   return { 
@@ -707,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
               throw new Error('getFollowingList function not found!');
             }
           },
-          args: [Array.from(keepList)]
+          args: [Array.from(keepList), currentScanDirection]
         });
 
         // 隐藏进度条显示

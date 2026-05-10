@@ -455,25 +455,46 @@
       overflow: visible;
     }
 
-    .list-actions {
+    /* Segmented Control */
+    .segmented-control {
       display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-      margin-bottom: 8px;
-      padding: 0 4px;
+      background: #F7F9F9;
+      border-radius: 20px;
+      padding: 2px;
+      margin: 10px 20px;
+      border: 1px solid #E1E8ED;
+      position: relative;
     }
-
-    .list-actions a {
-      color: var(--primary-color);
+    .segment-item {
+      flex: 1;
+      text-align: center;
+      padding: 8px 4px;
       font-size: 12px;
-      text-decoration: none;
+      cursor: pointer;
+      border-radius: 18px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      color: #657786;
       font-weight: 600;
-      transition: opacity 0.2s;
+      z-index: 1;
+      user-select: none;
     }
-
-    .list-actions a:hover {
-      text-decoration: underline;
-      opacity: 0.8;
+    .segment-item.active {
+      background: white;
+      color: var(--primary-color);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+    }
+    .segment-item:hover:not(.active) {
+      color: var(--text-color);
+      background: rgba(0,0,0,0.02);
+    }
+    .scan-direction-label {
+      font-size: 11px;
+      color: var(--dark-gray);
+      margin-bottom: 4px;
+      text-align: center;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
   </style>
 </head>
@@ -495,9 +516,12 @@
     <button id="stopButton">停止</button>
     <button id="confirmUnfollowBtn" style="display: none;">确认取消关注</button>
   </div>
-  <div id="actions-container" style="text-align: center; margin-top: 8px;">
-    <a href="#" id="scrollToBottomLink"
-      style="color: var(--primary-color); font-size: 13px; text-decoration: none;">滚动到页面底部</a>
+  <div style="margin-top: 12px;">
+    <div class="scan-direction-label">扫描起始位置</div>
+    <div class="segmented-control" id="scanDirectionControl">
+      <div class="segment-item active" id="dir-bottom" data-value="bottom">底部 (最早关注)</div>
+      <div class="segment-item" id="dir-top" data-value="top">顶部 (最近关注)</div>
+    </div>
   </div>
   <div id="status">点击按钮开始...</div>
   <div class="progress-container" id="progressContainer">
@@ -528,10 +552,6 @@
         <div class="stat-value" id="keptAccounts">0</div>
         <div class="stat-label">已标记保留</div>
       </div>
-    </div>
-    <div class="list-actions">
-      <a href="#" id="selectAllKeep">全部保留</a>
-      <a href="#" id="deselectAllKeep">全部取消保留</a>
     </div>
     <div id="accountsList"></div>
   </div>
